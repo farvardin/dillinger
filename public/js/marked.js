@@ -1,7 +1,15 @@
 /**
- * marked - a markdown parser
+ * marked - a txt2tags (and markdown) parser
+ * 
+ * version 2014-05-26
+ * 
+ * original project, only for markdown:
  * Copyright (c) 2011-2014, Christopher Jeffrey. (MIT Licensed)
  * https://github.com/chjj/marked
+ * 
+ * This version, adapted for txt2tags:
+ * Eric Forgeot
+ * https://github.com/farvardin/txt2tagsjs
  */
 
 ;(function() {
@@ -17,10 +25,10 @@ var block = {
   hr: /^( *[-*_]){3,} *(?:\n+|$)/,
   heading: /^ *(#{1,6}) *([^\n]+?) *#* *(?:\n+|$)/,
   nptable: noop,
-  lheading: /^([^\n]+)\n *(=|-){2,} *(?:\n+|$)/,
+  lheading: /^([^\n]+)\n *(=|-){2,} *(?:\n+|$)/,   //t2t: we should neutralise this//
   blockquote: /^( *>[^\n]+(\n(?!def)[^\n]+)*\n*)+/,
   list: /^( *)(bull) [\s\S]+?(?:hr|def|\n{2,}(?! )(?!\1bull )\n*|\s*$)/,
-  html: /^ *(?:comment|closed|closing) *(?:\n{2,}|\s*$)/,
+  html: /^ *(?:comment *(?:\n|\s*$)|closed *(?:\n{2,}|\s*$)|closing *(?:\n{2,}|\s*$))/,
   def: /^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +["(]([^\n]+)[")])? *(?:\n+|$)/,
   table: noop,
   paragraph: /^((?:[^\n]+\n?(?!hr|heading|lheading|blockquote|tag|def))+)\n*/,
@@ -43,8 +51,9 @@ block.blockquote = replace(block.blockquote)
   ('def', block.def)
   ();
 
+  
 block._tag = '(?!(?:'
-  + 'a|em|strong|small|s|cite|q|dfn|abbr|data|time|code'
+  + 'h1|h2|h3|h4|h5|a|em|strong|small|s|cite|q|dfn|abbr|data|time|code'
   + '|var|samp|kbd|sub|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo'
   + '|span|br|wbr|ins|del|img)\\b)\\w+(?!:/|[^\\w\\s@]*@)\\b';
 
@@ -90,8 +99,10 @@ block.gfm.paragraph = replace(block.paragraph)
  */
 
 block.tables = merge({}, block.gfm, {
-  nptable: /^ *(\S.*\|.*)\n *([-:]+ *\|[-| :]*)\n((?:.*\|.*(?:\n|$))*)\n*/,
-  table: /^ *\|(.+)\n *\|( *[-:]+[-| :]*)\n((?: *\|.*(?:\n|$))*)\n*/
+  //nptable: /^ *(\S.*\|.*)\n *([-:]+ *\|[-| :]*)\n((?:.*\|.*(?:\n|$))*)\n*/,
+    //table: /^ *\|(.+)\n *\|( *[-:]+[-| :]*)\n((?: *\|.*(?:\n|$))*)\n*/
+  nptable: /^ *([\_|\/]*\S.*\|.*)\n *([-:]+ *\|[-| :]*)\n((?:.*\|.*(?:\n|$))*)\n*/,
+  table: /^ *\|(.+)\n *\|(.+)\n((?: *\|.*(?:\n|$))*)\n*/
 });
 
 /**
@@ -135,9 +146,102 @@ Lexer.lex = function(src, options) {
 Lexer.prototype.lex = function(src) {
   src = src
     .replace(/\r\n|\r/g, '\n')
-    .replace(/\t/g, '    ')
+    //t2t// // .replace(/\t/g, '    ')
     .replace(/\u00a0/g, ' ')
     .replace(/\u2424/g, '\n');
+    
+      // ------- TXT2TAGS to html //
+    
+    // ------ protect http:// before parsing 
+    src = src.replace(/https:\/\//g, 'MYHTTPS');
+    src = src.replace(/http:\/\//g, 'MYHTTP');
+    src = src.replace(/sftp:\/\//g, 'MYSFTP');
+    src = src.replace(/ftps:\/\//g, 'MYFTPS');
+    src = src.replace(/ftp:\/\//g, 'MYFTP');
+    // ------ horizontal line (---------------------)
+    src = src.replace(/(-|_){20,}/g, '<hr/>')
+    src = src.replace(/(=){20,}/g, '<hr noshade="noshade" size="5"/>')
+    // ------ headings      = h1 =  /   == h2 ==
+    // we add 2 extra new lines to be sure it will close ending lists
+    src = src.replace(/\s*=====\s*(.+)\s*=====/gm,"\n\n<h5>$1</h5>\n");
+    src = src.replace(/\s*====\s*(.+)\s*====/gm,"\n\n<h4>$1</h4>\n");
+    src = src.replace(/\s*===\s*(.+)\s*===/gm,"\n\n<h3>$1</h3>\n");
+    src = src.replace(/\s*==\s*(.+)\s*==/gm,"\n\n<h2>$1</h2>\n");
+    src = src.replace(/^\s*=\s*(.+)\s*=/gm,"\n\n<h1>$1</h1>\n");
+    // ------ bold / strong **item** (we disable them for ``code``)
+    // by using negative lookahead see http://www.regular-expressions.info/lookaround.html
+    // don't use [^``] which "eat" characters
+   	src = src.replace(/(?!``)?\*\*([^\s](.*?[^\s])?)\*\*(?!``)/g, '<b>$1</b>');
+    // ------ underline     __item__
+   	src = src.replace(/(?!``)__([^\s](.*?[^\s])?)__(?!``)/g, ' <u>$1</u> ');
+    // ------ strikeout     --item--
+   	src = src.replace(/(?!``)--([^\s](.*?[^\s])?)--(?!``)/g, ' <del>$1</del> ');
+    // ------ italic /em    //item//
+    //src = src.replace(/[^(ht|f)tps?:]\/\/([^\s](.*?[^\s])?)\/\//g, ' <i>$1</i>');
+    src = src.replace(/(?!``)\/\/([^\s](.*?[^\s])?)\/\/(?!``)/g, ' <i>$1</i> ');  
+    // ------ linked images (note: first before links)
+    src = src.replace(/^\s*\[\[(.+)?.jpg\] (.+)?\]/gm, '<a href="$2"><img src="$1.jpg"></img></a>');
+    src = src.replace(/^\s*\[\[(.+)?.png\] (.+)?\]/gm, '<a href="$2"><img src="$1.png"></img></a>');
+    src = src.replace(/^\s*\[\[(.+)?.gif\] (.+)?\]/gm, '<a href="$2"><img src="$1.gif"></img></a>');
+    
+    // ------ images       [image.png]
+    src = src.replace(/^\s*\[(.+)?.jpg\]/gm, '<img src="$1.jpg"></img>');
+    src = src.replace(/^\s*\[(.+)?.png\]/gm, '<img src="$1.png"></img>');
+    src = src.replace(/^\s*\[(.+)?.gif\]/gm, '<img src="$1.gif"></img>');
+    
+    // ------ normal link   [item http://url] 
+    src = src.replace(/\[(.*?) MYSFTP(.*?)\]/g, '<a href="MYSFTP$2">$1</a>');
+    src = src.replace(/\[(.*?) MYFTPS(.*?)\]/g, '<a href="MYFTPS$2">$1</a>');
+    src = src.replace(/\[(.*?) MYFTP(.*?)\]/g, '<a href="MYFTP$2">$1</a>');
+    src = src.replace(/\[(.*?) MYHTTPS(.*?)\]/g, '<a href="MYHTTPS$2">$1</a>');
+    src = src.replace(/\[(.*?) MYHTTP(.*?)\]/g, '<a href="MYHTTP$2">$1</a>');
+    
+    // local links
+    //bug: src = src.replace(/\[(.*?) ([^ ].*?)\]/g, '<a href="$2">$1</a>');
+    // workaround: use [description local:link]
+    src = src.replace(/\[(.*?) local:([^ ].*?)\]/g, '<a href="$2">$1</a>');
+    src = src.replace(/\[(.*) ([^ ].*?)\]/g, '<a href="$2">$1</a>');
+    
+    // revert protected http://
+    src = src.replace(/MYSFTP/g, 'sftp:\/\/');
+    src = src.replace(/MYFTPS/g, 'ftps:\/\/');
+    src = src.replace(/MYFTP/g, 'ftp:\/\/');
+    src = src.replace(/MYHTTPS/g, 'https:\/\/');
+    src = src.replace(/MYHTTP/g, 'http:\/\/');
+
+
+    // ------ lazy link
+    src = src.replace(/[^(https|http):\/\/]www\.(.*?[^\s])\.(.*?[^\s(">)])\s+/gm, ' <a href="http://$1.$2">http://$1.$2</a> ');
+
+    //src = src.replace(/[^(href=")](www(.*?[^\s])\s+)/gi,"<a href=\"http://www$1\">http://www.$1</a>");
+        
+    // ------ auto link     http://url
+    src = src.replace(/[^(href=")]((https|http|ftps|sftp|dict):[^'"\s]+)/gi," <a href=\"$1\">$1</a>");
+      
+
+
+    // ------ lists etc
+    src = src.replace(/^%(.+)$/gm, '');
+    src = src.replace(/\t\t(.+)$/gm, '<blockquote><blockquote>$1</blockquote></blockquote>\n');
+    src = src.replace(/\t(.+)$/gm, '<blockquote>$1</blockquote>\n');
+    // ------ code     ``item``  or ^``` item
+    src = src.replace(/\s``` (.+)$/gm, '<pre>$1</pre>');
+    src = src.replace(/``([^\s](.*?[^\s])?)``/g, '<code>$1</code>');
+    src = src.replace(/^\+\s*(.+)$/gm, '1. $1');
+    src = src.replace(/^:\s(.+)$/gm, '<dl><dt>$1</dt></dl>');/* for definition lists */
+    //src = src.replace(/<dl>/gm, '</dd><dl>');/* for definition lists */
+    //src = src.replace(/^\s*\|(.+)\|(.+)\|$/gm, '<table><tr><td>$1</td><td>$2</td><tr></</table>');
+    
+    // tables
+    src = src.replace(/^[ ]*\|[\_|\/|\|]/gm, '|');
+    //src = src.replace(/^[ ]*\|\|(.+)\|$/gm, '<table><tr><th>$1</td></th></table>');
+    //src = src.replace(/^[ ]*\|\_(.+)\|$/gm, '<table><tr><th>$1</td></th></table>');
+    //src = src.replace(/^[ ]*\|\/(.+)\|$/gm, '<table><tr><th>$1</td></th></table>');
+    //src = src.replace(/^[ ]*\|(.+)\|$/gm, '<table><tr><td>$1</td></tr></table>');
+    
+    //src = src.replace(/<table>([^*]+?)\|([^*]+?)<\/table>/gm, '<table><tr><td>$1</td><td>$2</td></table>');
+
+    // ------ // end of txt2tags to html
 
   return this.token(src, true);
 };
@@ -453,9 +557,9 @@ var inline = {
   link: /^!?\[(inside)\]\(href\)/,
   reflink: /^!?\[(inside)\]\s*\[([^\]]*)\]/,
   nolink: /^!?\[((?:\[[^\]]*\]|[^\[\]])*)\]/,
-  strong: /^__([\s\S]+?)__(?!_)|^\*\*([\s\S]+?)\*\*(?!\*)/,
-  em: /^\b_((?:__|[\s\S])+?)_\b|^\*((?:\*\*|[\s\S])+?)\*(?!\*)/,
-  code: /^(`+)\s*([\s\S]*?[^`])\s*\1(?!`)/,
+  strong: /____md_disabled_here__/, // t2t: we disable this
+  em: /____md_disabled_here__/, // t2t: we disable this
+  code: /____md_disabled_here__/,  // t2t: we disable this
   br: /^ {2,}\n(?!\s*$)/,
   del: noop,
   text: /^[\s\S]+?(?=[\\<!\[_*`]| {2,}\n|$)/
@@ -484,8 +588,8 @@ inline.normal = merge({}, inline);
  */
 
 inline.pedantic = merge({}, inline.normal, {
-  strong: /^__(?=\S)([\s\S]*?\S)__(?!_)|^\*\*(?=\S)([\s\S]*?\S)\*\*(?!\*)/,
-  em: /^_(?=\S)([\s\S]*?\S)_(?!_)|^\*(?=\S)([\s\S]*?\S)\*(?!\*)/
+  //strong: /^__(?=\S)([\s\S]*?\S)__(?!_)|^\*\*(?=\S)([\s\S]*?\S)\*\*(?!\*)/,
+  //em: /^_(?=\S)([\s\S]*?\S)_(?!_)|^\*(?=\S)([\s\S]*?\S)\*(?!\*)/
 });
 
 /**
@@ -840,11 +944,11 @@ Renderer.prototype.tablecell = function(content, flags) {
 
 // span level renderer
 Renderer.prototype.strong = function(text) {
-  return '<strong>' + text + '</strong>';
+  return '<b>' + text + '</b>';
 };
 
 Renderer.prototype.em = function(text) {
-  return '<em>' + text + '</em>';
+  return '<i>' + text + '</i>';
 };
 
 Renderer.prototype.codespan = function(text) {
@@ -1154,8 +1258,13 @@ function marked(src, opt, callback) {
 
     pending = tokens.length;
 
-    var done = function() {
-      var out, err;
+    var done = function(err) {
+      if (err) {
+        opt.highlight = highlight;
+        return callback(err);
+      }
+
+      var out;
 
       try {
         out = Parser.parse(tokens, opt);
@@ -1184,6 +1293,7 @@ function marked(src, opt, callback) {
           return --pending || done();
         }
         return highlight(token.text, token.lang, function(err, code) {
+          if (err) return done(err);
           if (code == null || code === token.text) {
             return --pending || done();
           }
@@ -1233,7 +1343,7 @@ marked.defaults = {
   smartypants: false,
   headerPrefix: '',
   renderer: new Renderer,
-  xhtml: false
+  xhtml: true
 };
 
 /**
@@ -1253,12 +1363,13 @@ marked.inlineLexer = InlineLexer.output;
 
 marked.parse = marked;
 
-if (typeof exports === 'object') {
+if (typeof module !== 'undefined' && typeof exports === 'object') {
   module.exports = marked;
 } else if (typeof define === 'function' && define.amd) {
   define(function() { return marked; });
 } else {
   this.marked = marked;
+  this.EXPORTED_SYMBOLS = ['marked']; /* t2t & adam-p: added easier loading in Firefox */
 }
 
 }).call(function() {
